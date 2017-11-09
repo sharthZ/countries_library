@@ -2,44 +2,130 @@
 import shelve
 import difflib
 from os import path
-import csv
+from six import string_types
+
+DB_PATH = path.join(path.split(path.abspath(__file__))[0],
+                    'database', 'countries_db')
 
 
-DB_PATH = path.join(path.split(path.abspath(__file__))[0], 'database', 'countries_db')
+def isstr(s):
+    return isinstance(s, string_types)
 
 
-def match_country_name(key, value, priority=2):
-    """ Добавление страны. Аргументы: key - вариант названия страны (строка), value - общее название страны (строка),
-    priority (целое число, 1 или 2) - приоритет варианта при нормализации ('1' - высокий
-    (название страны, перевод, сокращение), '2' - низкий (столица, регион, и т.д.) """
+class _Normalizer:
+    def __init__(self, db_path):
+        self._countries_db = shelve.open(db_path, 'w')
 
-    if type(key) is str and type(value) is str and type(priority) is int and (priority == 1 or priority == 2):
-        try:
-            with shelve.open(DB_PATH, 'w') as countries_db:
-                countries_db[key.lower()] = str(priority) + value
+    def cleanup(self):
+        self._countries_db.close()
+
+    def add_country_name(self, key, value, priority=2):
+        """ Add key-value pair for country.
+            Args:
+                key - name, which you want to add to DB (str),
+                value - official country name (str),
+                priority - priority for normalization:
+                    '1' - high (official name, translate, abbreviation),
+                    '2' - low (capital, state, region, etc.)
+            Return:
+                True - if key-value pair successfully added,
+                False - otherwise
+        """
+        is_args = (isstr(key) and isstr(value) and type(priority) is int and
+                   priority in (1, 2))
+        if is_args:
+            self._countries_db[key.lower()] = str(priority) + value
+            return True
+        return False
+
+    def del_country_name(self, key):
+        """ Delete key-value pair. Args:
+                key - name, which you want to remove from DB (str)
+        """
+        if isstr(key) and key.lower() in self._countries_db.keys():
+            del self._countries_db[key.lower()]
+
+    def match_country_name(self, posname, acc=0.7):
+        is_not_args = (~isstr(posname) or ~isinstance(acc, float) or
+                       0.0 <= acc <= 1.0 or not posname)
+        if is_not_args:
             return None
-        # Здесь и далее. На всякий случай перехватывается Exception. Не смотря на то,
-        # что ошибка здесь может быть только в отсутствии корректной базы данных
-        except Exception:
-            return 'DatabaseError'
-    else:
-        return 'Invalid arguments'
-
-
-def del_country_name(key):
-    """ Удаление варианта названия страны. Аргумент: key - удаляемый вариант названия страны. 
-    Возращаемое значение: нет """
-
-    if type(key) is str:
-        try:
-            with shelve.open(DB_PATH, 'w') as countries_db:
-                if key.lower() in countries_db.keys():
-                    del countries_db[key.lower()]
+        posname = posname.lower()
+        symbols = [
+            ',', '.', '/', '!', '?', '<', '>', '[', ']', '|', '(', ')', '+',
+            '=', '_', '*', '&', '%', ';', '№', '~', '@', '#', '$', '{', '}',
+            '-', '`', '1', '2', '3', '4', '5', '6', '7', '8', '9'
+        ]
+        for symb in symbols:
+            posname = posname.replace(symb, ' ')
+        if not posname:
             return None
-        except Exception:
-            return 'DatabaseError'
-    else:
-        return 'Invalid arguments'
+        # First, we search for the whole string and
+        # the value to coincide with the priority '1'
+        # Check for length - to exclude options
+        # when only the beginning or other part of the line has coincided
+        posname_tmp = difflib.get_close_matches(posname, countries_db.keys(), 
+                                                n=1, cutoff=acc)
+        if posname_tmp != [] and countries_db[posname_tmp[0]][0] == '1' and \
+                abs(len(posname) - len(posname_tmp[0])) <= 1:
+            return countries_db[posname_tmp[0]][1:]
+        # Ищем совпадение всей строки и значения с приоритетом '2'
+        posname_tmp = difflib.get_close_matches(posname, countries_db.keys(), n=1, cutoff=dif_acc)
+        if posname_tmp != [] and countries_db[posname_tmp[0]][0] == '2' and \
+                abs(len(posname) - len(posname_tmp[0])) <= 1:
+            return countries_db[posname_tmp[0]][1:]
+        # Ищем совпадение всей строки без пробелов и значения с приоритетом '1'
+        posname_tmp = posname.replace(' ', '')
+        posname_tmp = difflib.get_close_matches(posname_tmp, countries_db.keys(), n=1, cutoff=dif_acc)
+        if posname_tmp != [] and countries_db[posname_tmp[0]][0] == '1' and \
+                abs(len(posname.replace(' ', '')) - len(posname_tmp[0].replace(' ', ''))) <= 1:
+            return countries_db[posname_tmp[0]][1:]
+        # Ищем совпадение всей строки без пробелов и значения с приоритетом '2'
+        posname_tmp = posname.replace(' ', '')
+        posname_tmp = difflib.get_close_matches(posname_tmp, countries_db.keys(), n=1, cutoff=dif_acc)
+        if posname_tmp != [] and countries_db[posname_tmp[0]][0] == '2' and \
+                abs(len(posname.replace(' ', '')) - len(posname_tmp[0].replace(' ', ''))) <= 1:
+            return countries_db[posname_tmp[0]][1:]
+
+        # Делим входную строку на слова, разделитель - пробел
+        parts = posname.split(" ")
+        for part in parts:
+            # Ищем равное по количеству букв совпадение части строки и значения с приоритетом '1'
+            part_tmp = difflib.get_close_matches(part, countries_db.keys(), n=1, cutoff=dif_acc)
+            if part_tmp != [] and countries_db[part_tmp[0]][0] == '1' and len(part) == len(part_tmp[0]):
+                return countries_db[part_tmp[0]][1:]
+        for part in parts:
+            # Ищем неравное по количеству букв совпадение части строки и значения с приоритетом '1'
+            part_tmp = difflib.get_close_matches(part, countries_db.keys(), n=1, cutoff=dif_acc)
+            if part_tmp != [] and countries_db[part_tmp[0]][0] == '1':
+                return countries_db[part_tmp[0]][1:]
+        for part in parts:
+            # Ищем равное по количеству букв совпадение части строки и значения с приоритетом '2'
+            part_tmp = difflib.get_close_matches(part, countries_db.keys(), n=1, cutoff=dif_acc)
+            if part_tmp != [] and countries_db[part_tmp[0]][0] == '2' and len(part) == len(part_tmp[0]):
+                return countries_db[part_tmp[0]][1:]
+        for part in parts:
+            # Ищем неравное по количеству букв совпадение части строки и значения с приоритетом '2'
+            part_tmp = difflib.get_close_matches(part, countries_db.keys(), n=1, cutoff=dif_acc)
+            if part_tmp != [] and countries_db[part_tmp[0]][0] == '2':
+                return countries_db[part_tmp[0]][1:]
+        return None
+
+
+class CountryNormalizer():
+    def __init__(self, db_path=DB_PATH):
+        self.db_path = db_path
+
+    def __enter__(self):
+        self.package_obj = _Normalizer(self.db_path)
+        return self.package_obj
+
+    def __exit__(self):
+        self.package_obj.cleanup()
+
+
+
+
 
 
 def normalize_country_name(posname, dif_acc=0.7):
@@ -110,7 +196,3 @@ def normalize_country_name(posname, dif_acc=0.7):
                 if part_tmp != [] and countries_db[part_tmp[0]][0] == '2':
                     return countries_db[part_tmp[0]][1:]
             return 'None'
-    # На всякий случай перехватывается Exception. Не смотря на то,
-    # что ошибка здесь может быть только в отсутствии корректной базы данных
-    except Exception:
-            return 'DatabaseError'
