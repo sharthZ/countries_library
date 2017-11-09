@@ -7,7 +7,7 @@ from collections import Counter
 
 DB_PATH = path.join(path.split(path.abspath(__file__))[0],
                     'database', 'countries_db')
-PRIORITES = (1, 2)
+PRIORITIES = (1, 2)
 
 
 def isstr(s):
@@ -34,7 +34,7 @@ class _Normalizer:
                 False - otherwise
         """
         is_args = (isstr(key) and isstr(value) and type(priority) is int and
-                   priority in PRIORITES)
+                   priority in PRIORITIES)
         if is_args:
             self._db[key.lower()] = str(priority) + value
             return True
@@ -48,20 +48,22 @@ class _Normalizer:
             del self._db[key.lower()]
 
     def match_country_name(self, name, acc=0.7):
-        def match(s_in, acc, n=1):
-            for is_wo in (False, True):
-                s = s_in if ~is_wo else s_in.replace(' ', '')
+        def match(s_in, acc, n=1, f=True):
+            for wo in (False, True):
+                s = s_in if ~wo else s_in.replace(' ', '')
                 r = df.get_close_matches(s, self._db.keys(),
                                          n=n, cutoff=acc)
-                for p in PRIORITES:
-                    len_r = len(r[0]) if ~is_wo else len(r[0].replace(' ', ''))
-                    if r != [] and self._db[r[0]][0] == p and \
-                            abs(len(s) - len_r) <= 1:
-                        return self._db[r[0]][1:]
+                if len(r) < 1:
+                    continue
+                for p in PRIORITIES:
+                    # len_r = len(r[0]) if ~wo else len(r[0].replace(' ', ''))
+                    if self._db[r[0]][0] == str(p):
+                        # and abs(len(s) - len_r) <= 1)
+                        return self._db[r[0]][1 if f else 0:]
 
-        is_not_args = (~isstr(name) or ~isinstance(acc, float) or
-                       0.0 <= acc <= 1.0 or not name)
-        if is_not_args:
+        is_args = (isstr(name) and isinstance(acc, float) and
+                   0.0 <= acc <= 1.0 and name != '')
+        if not is_args:
             return None
         name = name.lower()
         symbols = [
@@ -74,11 +76,13 @@ class _Normalizer:
         if not name:
             return None
         res_name = match(name, acc)
-        if res_name:
+        if res_name is not None:
             return res_name
         parts = name.split(' ')
-        res_cnt = Counter(filter(None, [match(p, acc, 3) for p in parts]))
-        return res_cnt.most_common(1)[0][0]
+        res_list = list(filter(None, [match(p, acc, 3, False) for p in parts]))
+        res_list.sort()
+        if len(res_list) > 0:
+            return Counter(res_list).most_common(1)[0][0][1:]
 
 
 class CountryNormalizer():
@@ -89,5 +93,5 @@ class CountryNormalizer():
         self.package_obj = _Normalizer(self.db_path)
         return self.package_obj
 
-    def __exit__(self):
+    def __exit__(self, *args, **kwargs):
         self.package_obj.cleanup()
