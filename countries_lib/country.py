@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 import shelve
-import difflib
+import difflib as df
 from os import path
 from six import string_types
+from collections import Counter
 
 DB_PATH = path.join(path.split(path.abspath(__file__))[0],
                     'database', 'countries_db')
+PRIORITES = (1, 2)
 
 
 def isstr(s):
@@ -14,10 +16,10 @@ def isstr(s):
 
 class _Normalizer:
     def __init__(self, db_path):
-        self._countries_db = shelve.open(db_path, 'w')
+        self._db = shelve.open(db_path, 'w')
 
     def cleanup(self):
-        self._countries_db.close()
+        self._db.close()
 
     def add_country_name(self, key, value, priority=2):
         """ Add key-value pair for country.
@@ -32,9 +34,9 @@ class _Normalizer:
                 False - otherwise
         """
         is_args = (isstr(key) and isstr(value) and type(priority) is int and
-                   priority in (1, 2))
+                   priority in PRIORITES)
         if is_args:
-            self._countries_db[key.lower()] = str(priority) + value
+            self._db[key.lower()] = str(priority) + value
             return True
         return False
 
@@ -42,74 +44,41 @@ class _Normalizer:
         """ Delete key-value pair. Args:
                 key - name, which you want to remove from DB (str)
         """
-        if isstr(key) and key.lower() in self._countries_db.keys():
-            del self._countries_db[key.lower()]
+        if isstr(key) and key.lower() in self._db.keys():
+            del self._db[key.lower()]
 
-    def match_country_name(self, posname, acc=0.7):
-        is_not_args = (~isstr(posname) or ~isinstance(acc, float) or
-                       0.0 <= acc <= 1.0 or not posname)
+    def match_country_name(self, name, acc=0.7):
+        def match(s_in, acc, n=1):
+            for is_wo in (False, True):
+                s = s_in if ~is_wo else s_in.replace(' ', '')
+                r = df.get_close_matches(s, self._db.keys(),
+                                         n=n, cutoff=acc)
+                for p in PRIORITES:
+                    len_r = len(r[0]) if ~is_wo else len(r[0].replace(' ', ''))
+                    if r != [] and self._db[r[0]][0] == p and \
+                            abs(len(s) - len_r) <= 1:
+                        return self._db[r[0]][1:]
+
+        is_not_args = (~isstr(name) or ~isinstance(acc, float) or
+                       0.0 <= acc <= 1.0 or not name)
         if is_not_args:
             return None
-        posname = posname.lower()
+        name = name.lower()
         symbols = [
             ',', '.', '/', '!', '?', '<', '>', '[', ']', '|', '(', ')', '+',
             '=', '_', '*', '&', '%', ';', '№', '~', '@', '#', '$', '{', '}',
             '-', '`', '1', '2', '3', '4', '5', '6', '7', '8', '9'
         ]
         for symb in symbols:
-            posname = posname.replace(symb, ' ')
-        if not posname:
+            name = name.replace(symb, ' ')
+        if not name:
             return None
-        # First, we search for the whole string and
-        # the value to coincide with the priority '1'
-        # Check for length - to exclude options
-        # when only the beginning or other part of the line has coincided
-        posname_tmp = difflib.get_close_matches(posname, countries_db.keys(), 
-                                                n=1, cutoff=acc)
-        if posname_tmp != [] and countries_db[posname_tmp[0]][0] == '1' and \
-                abs(len(posname) - len(posname_tmp[0])) <= 1:
-            return countries_db[posname_tmp[0]][1:]
-        # Ищем совпадение всей строки и значения с приоритетом '2'
-        posname_tmp = difflib.get_close_matches(posname, countries_db.keys(), n=1, cutoff=dif_acc)
-        if posname_tmp != [] and countries_db[posname_tmp[0]][0] == '2' and \
-                abs(len(posname) - len(posname_tmp[0])) <= 1:
-            return countries_db[posname_tmp[0]][1:]
-        # Ищем совпадение всей строки без пробелов и значения с приоритетом '1'
-        posname_tmp = posname.replace(' ', '')
-        posname_tmp = difflib.get_close_matches(posname_tmp, countries_db.keys(), n=1, cutoff=dif_acc)
-        if posname_tmp != [] and countries_db[posname_tmp[0]][0] == '1' and \
-                abs(len(posname.replace(' ', '')) - len(posname_tmp[0].replace(' ', ''))) <= 1:
-            return countries_db[posname_tmp[0]][1:]
-        # Ищем совпадение всей строки без пробелов и значения с приоритетом '2'
-        posname_tmp = posname.replace(' ', '')
-        posname_tmp = difflib.get_close_matches(posname_tmp, countries_db.keys(), n=1, cutoff=dif_acc)
-        if posname_tmp != [] and countries_db[posname_tmp[0]][0] == '2' and \
-                abs(len(posname.replace(' ', '')) - len(posname_tmp[0].replace(' ', ''))) <= 1:
-            return countries_db[posname_tmp[0]][1:]
-
-        # Делим входную строку на слова, разделитель - пробел
-        parts = posname.split(" ")
-        for part in parts:
-            # Ищем равное по количеству букв совпадение части строки и значения с приоритетом '1'
-            part_tmp = difflib.get_close_matches(part, countries_db.keys(), n=1, cutoff=dif_acc)
-            if part_tmp != [] and countries_db[part_tmp[0]][0] == '1' and len(part) == len(part_tmp[0]):
-                return countries_db[part_tmp[0]][1:]
-        for part in parts:
-            # Ищем неравное по количеству букв совпадение части строки и значения с приоритетом '1'
-            part_tmp = difflib.get_close_matches(part, countries_db.keys(), n=1, cutoff=dif_acc)
-            if part_tmp != [] and countries_db[part_tmp[0]][0] == '1':
-                return countries_db[part_tmp[0]][1:]
-        for part in parts:
-            # Ищем равное по количеству букв совпадение части строки и значения с приоритетом '2'
-            part_tmp = difflib.get_close_matches(part, countries_db.keys(), n=1, cutoff=dif_acc)
-            if part_tmp != [] and countries_db[part_tmp[0]][0] == '2' and len(part) == len(part_tmp[0]):
-                return countries_db[part_tmp[0]][1:]
-        for part in parts:
-            # Ищем неравное по количеству букв совпадение части строки и значения с приоритетом '2'
-            part_tmp = difflib.get_close_matches(part, countries_db.keys(), n=1, cutoff=dif_acc)
-            if part_tmp != [] and countries_db[part_tmp[0]][0] == '2':
-                return countries_db[part_tmp[0]][1:]
-        return None
+        res_name = match(name, acc)
+        if res_name:
+            return res_name
+        parts = name.split(' ')
+        res_cnt = Counter(filter(None, [match(p, acc, 3) for p in parts]))
+        return res_cnt.most_common(1)[0][0]
 
 
 class CountryNormalizer():
@@ -122,77 +91,3 @@ class CountryNormalizer():
 
     def __exit__(self):
         self.package_obj.cleanup()
-
-
-
-
-
-
-def normalize_country_name(posname, dif_acc=0.7):
-    """ Приведение названия страны к общепринятому виду. Аргументы: posname (possible name) - нормализуемое название 
-    (строка), dif_acc - параметр точности (вещественное число от 0 до 1, по умолчанию 0.7). 
-    Возвращаемое значение: общее название страны (строка), если не найдено - 'None' (строка) """
-
-    if type(posname) is not str or type(dif_acc) is not float or dif_acc <= 0.0 or dif_acc >= 1.0 or posname == "":
-        return 'Invalid arguments'
-    try:
-        with shelve.open(DB_PATH, 'w') as countries_db:
-            posname = posname.lower()
-            # Очищаем входную строку от знаков препинания (кроме пробелов) и цифр.
-            # Данный способ безопаснее, чем регулярные выражения и применение некоторых стандартных функций,
-            # всвязи с национальными символами в названиях стран. Если пользователь умудрится использовать
-            # иные символы, то он либо опечатался, либо издевается. Опечатки исправляются далее.
-            symbols = [',', '.', '/', '!', '?', '<', '>', '[', ']', '|', '(', ')', '+', '=', '_', '*', '&', '%',
-                       ';', '№', '~', '@', '#', '$', '{', '}', '-', '`', '1', '2', '3', '4', '5', '6', '7', '8', '9']
-            for symb in symbols:
-                posname = posname.replace(symb, ' ')
-            if posname == "":
-                return 'Invalid arguments'
-
-            # Сначала ищем совпадение всей строки и значения с приоритетом '1'
-            # Проверка на длину - чтобы исключить варианты, когда совпало только начало или другая часть строки
-            posname_tmp = difflib.get_close_matches(posname, countries_db.keys(), n=1, cutoff=dif_acc)
-            if posname_tmp != [] and countries_db[posname_tmp[0]][0] == '1' and \
-                    abs(len(posname) - len(posname_tmp[0])) <= 1:
-                return countries_db[posname_tmp[0]][1:]
-            # Ищем совпадение всей строки и значения с приоритетом '2'
-            posname_tmp = difflib.get_close_matches(posname, countries_db.keys(), n=1, cutoff=dif_acc)
-            if posname_tmp != [] and countries_db[posname_tmp[0]][0] == '2' and \
-                    abs(len(posname) - len(posname_tmp[0])) <= 1:
-                return countries_db[posname_tmp[0]][1:]
-            # Ищем совпадение всей строки без пробелов и значения с приоритетом '1'
-            posname_tmp = posname.replace(' ', '')
-            posname_tmp = difflib.get_close_matches(posname_tmp, countries_db.keys(), n=1, cutoff=dif_acc)
-            if posname_tmp != [] and countries_db[posname_tmp[0]][0] == '1' and \
-                    abs(len(posname.replace(' ', '')) - len(posname_tmp[0].replace(' ', ''))) <= 1:
-                return countries_db[posname_tmp[0]][1:]
-            # Ищем совпадение всей строки без пробелов и значения с приоритетом '2'
-            posname_tmp = posname.replace(' ', '')
-            posname_tmp = difflib.get_close_matches(posname_tmp, countries_db.keys(), n=1, cutoff=dif_acc)
-            if posname_tmp != [] and countries_db[posname_tmp[0]][0] == '2' and \
-                    abs(len(posname.replace(' ', '')) - len(posname_tmp[0].replace(' ', ''))) <= 1:
-                return countries_db[posname_tmp[0]][1:]
-
-            # Делим входную строку на слова, разделитель - пробел
-            parts = posname.split(" ")
-            for part in parts:
-                # Ищем равное по количеству букв совпадение части строки и значения с приоритетом '1'
-                part_tmp = difflib.get_close_matches(part, countries_db.keys(), n=1, cutoff=dif_acc)
-                if part_tmp != [] and countries_db[part_tmp[0]][0] == '1' and len(part) == len(part_tmp[0]):
-                    return countries_db[part_tmp[0]][1:]
-            for part in parts:
-                # Ищем неравное по количеству букв совпадение части строки и значения с приоритетом '1'
-                part_tmp = difflib.get_close_matches(part, countries_db.keys(), n=1, cutoff=dif_acc)
-                if part_tmp != [] and countries_db[part_tmp[0]][0] == '1':
-                    return countries_db[part_tmp[0]][1:]
-            for part in parts:
-                # Ищем равное по количеству букв совпадение части строки и значения с приоритетом '2'
-                part_tmp = difflib.get_close_matches(part, countries_db.keys(), n=1, cutoff=dif_acc)
-                if part_tmp != [] and countries_db[part_tmp[0]][0] == '2' and len(part) == len(part_tmp[0]):
-                    return countries_db[part_tmp[0]][1:]
-            for part in parts:
-                # Ищем неравное по количеству букв совпадение части строки и значения с приоритетом '2'
-                part_tmp = difflib.get_close_matches(part, countries_db.keys(), n=1, cutoff=dif_acc)
-                if part_tmp != [] and countries_db[part_tmp[0]][0] == '2':
-                    return countries_db[part_tmp[0]][1:]
-            return 'None'
