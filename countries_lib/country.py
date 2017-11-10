@@ -57,7 +57,7 @@ class _Normalizer:
                 None - otherwise
         """
 
-        def match(s_in, acc, n=1, f=True):
+        def match(s_in, n=1, f=True):
             for wo in (False, True):
                 s = s_in if ~wo else s_in.replace(' ', '')
                 r = df.get_close_matches(s, self._db.keys(),
@@ -82,11 +82,11 @@ class _Normalizer:
             name = name.replace(symb, ' ')
         if not name:
             return None
-        res_name = match(name, acc)
+        res_name = match(name)
         if res_name is not None:
             return res_name
         parts = name.split(' ')
-        res_list = list(filter(None, [match(p, acc, 3, False) for p in parts]))
+        res_list = list(filter(None, [match(p, 3, False) for p in parts]))
         res_list.sort()
         if len(res_list) > 0:
             return Counter(res_list).most_common(1)[0][0][1:]
@@ -96,9 +96,15 @@ class CountryNormalizer():
     def __init__(self, db_path=DB_PATH):
         self.db_path = db_path
 
-    def __enter__(self):
+    def open(self):
         self.package_obj = _Normalizer(self.db_path)
         return self.package_obj
 
-    def __exit__(self, *args, **kwargs):
+    def __enter__(self):
+        return self.open()
+
+    def close(self):
         self.package_obj.cleanup()
+
+    def __exit__(self, *args, **kwargs):
+        self.close()
