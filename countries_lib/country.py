@@ -21,7 +21,7 @@ class _Normalizer:
     def cleanup(self):
         self._db.close()
 
-    def add_country_name(self, key, value, priority=2):
+    def add(self, key, value, priority=2):
         """ Add key-value pair for country.
             Args:
                 key - name, which you want to add to DB (str),
@@ -40,14 +40,14 @@ class _Normalizer:
             return True
         return False
 
-    def del_country_name(self, key):
+    def delete(self, key):
         """ Delete key-value pair. Args:
                 key - name, which you want to remove from DB (str)
         """
         if isstr(key) and key.lower() in self._db.keys():
             del self._db[key.lower()]
 
-    def match_country_name(self, name, acc=0.7):
+    def match(self, name, acc=0.7):
         """ Match closest country name.
             Args:
                 name - name, which to search (str)
