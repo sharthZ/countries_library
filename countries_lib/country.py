@@ -65,9 +65,7 @@ class _Normalizer:
                 if len(r) < 1:
                     continue
                 for p in PRIORITIES:
-                    # len_r = len(r[0]) if ~wo else len(r[0].replace(' ', ''))
                     if self._db[r[0]][0] == str(p):
-                        # and abs(len(s) - len_r) <= 1)
                         return self._db[r[0]][1 if f else 0:]
 
         is_args = (isstr(name) and isinstance(acc, float) and
