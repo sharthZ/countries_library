@@ -26,9 +26,9 @@ class _Normalizer:
             Args:
                 key - name, which you want to add to DB (str),
                 value - official country name (str),
-                priority - priority for normalization:
-                    '1' - high (official name, translate, abbreviation),
-                    '2' - low (capital, state, region, etc.)
+                priority - priority for normalization (default 2):
+                    1 - high (official name, translate, abbreviation),
+                    2 - low (capital, state, region, etc.)
             Return:
                 True - if key-value pair successfully added,
                 False - otherwise
@@ -48,6 +48,15 @@ class _Normalizer:
             del self._db[key.lower()]
 
     def match_country_name(self, name, acc=0.7):
+        """ Match closest country name.
+            Args:
+                name - name, which to search (str)
+                acc - accuracy (default 0.7), float in [0, 1], higher = better
+            Return:
+                str - if search with specified accuracy was successful,
+                None - otherwise
+        """
+
         def match(s_in, acc, n=1, f=True):
             for wo in (False, True):
                 s = s_in if ~wo else s_in.replace(' ', '')
